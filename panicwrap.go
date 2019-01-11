@@ -1,4 +1,4 @@
-// The panicwrap package provides functions for capturing and handling
+// Package panicwrap provides functions for capturing and handling
 // panics in your application. It does this by re-executing the running
 // application and monitoring stderr for any panics. At the same time,
 // stdout/stderr/etc. are set to the same values so that data is shuttled
@@ -20,13 +20,11 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
-
-	"github.com/kardianos/osext"
 )
 
 const (
-	DEFAULT_COOKIE_KEY = "cccf35992f8f3cd8d1d28f0109dd953e26664531"
-	DEFAULT_COOKIE_VAL = "7c28215aca87789f95b406b8dd91aa5198406750"
+	defCookieKey = "cccf35992f8f3cd8d1d28f0109dd953e26664531"
+	defCookieVal = "7c28215aca87789f95b406b8dd91aa5198406750"
 )
 
 // HandlerFunc is the type called when a panic is detected.
@@ -118,13 +116,13 @@ func Wrap(c *WrapConfig) (int, error) {
 	}
 
 	// Get the path to our current executable
-	exePath, err := osext.Executable()
+	exePath, err := os.Executable()
 	if err != nil {
 		return -1, err
 	}
 
 	// Pipe the stderr so we can read all the data as we look for panics
-	stderr_r, stderr_w := io.Pipe()
+	stderrR, stderrW := io.Pipe()
 
 	// doneCh is closed when we're done, signaling any other goroutines
 	// to end immediately.
@@ -137,17 +135,17 @@ func Wrap(c *WrapConfig) (int, error) {
 	// On close, make sure to finish off the copying of data to stderr
 	defer func() {
 		defer close(doneCh)
-		stderr_w.Close()
+		stderrW.Close()
 		<-panicCh
 	}()
 
 	// Start the goroutine that will watch stderr for any panics
-	go trackPanic(stderr_r, c.Writer, c.DetectDuration, panicCh)
+	go trackPanic(stderrR, c.Writer, c.DetectDuration, panicCh)
 
 	// Create the writer for stdout that we're going to use
-	var stdout_w io.Writer = os.Stdout
+	var stdoutW io.Writer = os.Stdout
 	if c.Stdout != nil {
-		stdout_w = c.Stdout
+		stdoutW = c.Stdout
 	}
 
 	// Build a subcommand to re-execute ourselves. We make sure to
@@ -157,8 +155,8 @@ func Wrap(c *WrapConfig) (int, error) {
 	cmd := exec.Command(exePath, os.Args[1:]...)
 	cmd.Env = append(os.Environ(), c.CookieKey+"="+c.CookieValue)
 	cmd.Stdin = os.Stdin
-	cmd.Stdout = stdout_w
-	cmd.Stderr = stderr_w
+	cmd.Stdout = stdoutW
+	cmd.Stderr = stderrW
 
 	// Windows doesn't support this, but on other platforms pass in
 	// the original file descriptors so they can be used.
@@ -208,7 +206,7 @@ func Wrap(c *WrapConfig) (int, error) {
 		}
 
 		// Close the writer end so that the tracker goroutine ends at some point
-		stderr_w.Close()
+		stderrW.Close()
 
 		// Wait on the panic data
 		panicTxt := <-panicCh
@@ -243,11 +241,11 @@ func Wrapped(c *WrapConfig) bool {
 	}
 
 	if c.CookieKey == "" {
-		c.CookieKey = DEFAULT_COOKIE_KEY
+		c.CookieKey = defCookieKey
 	}
 
 	if c.CookieValue == "" {
-		c.CookieValue = DEFAULT_COOKIE_VAL
+		c.CookieValue = defCookieVal
 	}
 
 	// If the cookie key/value match our environment, then we are the
